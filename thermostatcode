@@ -1,0 +1,478 @@
+//Libraries utilized: LiquidCrystal_I2C, used to control liquid crystal display, DHT, used for getting a temperature sensor output.
+//References utilized: Arduino official documentation, DHT22 sensor documentation
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+LiquidCrystal_I2C lcd_1(0x27,16,2);
+DHT tempSensor(A0,DHT22);
+
+const int button1 = 2;
+const int button2 = 3;
+const int button3 = 4;
+
+int button1State = 0;
+int button2State = 0;
+int button3State = 0;
+
+const int red = 8;
+const int green = 7;
+const int blue = 6;
+const int sensor = A0;
+
+int mode = 1;// 1 = Thermostat, 2 = Temperature Alert
+int prevTargetTemp = 70;
+int targetTemp = 70;
+int prevMaxTemp = 80;
+int maxTemp = 80;
+int prevMinTemp = 60;
+int minTemp = 60;
+bool useFahrenheit = true;
+bool heating = false;
+bool cooling = false;
+bool highSelected = true;
+
+double temperature = 0;
+
+void setup()
+{
+  pinMode(sensor, INPUT);//   Temperature Analog Input
+  pinMode(button1,INPUT);
+  pinMode(button2,INPUT);
+  pinMode(button3,INPUT);
+  pinMode(red,OUTPUT);
+  pinMode(blue,OUTPUT);
+  pinMode(green,OUTPUT);
+
+  tempSensor.begin();
+
+  lcd_1.init();
+  lcd_1.setBacklight(1);
+  lcd_1.setCursor(0,0);
+  lcd_1.print("Now: ");
+  lcd_1.print(tempSensor.readTemperature(useFahrenheit));
+  lcd_1.print("F");
+  lcd_1.setCursor(0,1);
+  lcd_1.print("Set: ");
+  lcd_1.print("70");
+}
+
+void loop()
+{
+  button1State = digitalRead(button1);
+  button2State = digitalRead(button2);
+  button3State = digitalRead(button3);
+  temperature = tempSensor.readTemperature(useFahrenheit);
+
+  if(mode == 1)// Thermostat Mode
+  {
+
+    lcd_1.setCursor(5,0);
+    if(useFahrenheit)
+    {
+      lcd_1.print(temperature);
+      lcd_1.print("F");
+    }
+    else
+    {
+      lcd_1.print(temperature);
+      lcd_1.print("C");
+    }
+
+    if(button2State == HIGH)// Mode Switch
+    {
+      mode = 2;
+      lcd_1.clear();
+      lcd_1.setCursor(6,0);
+      lcd_1.print("MODE");
+      lcd_1.setCursor(3,1);
+      lcd_1.print("Temp. Alert");
+      delay(1500);
+      lcd_1.clear();
+      
+      useFahrenheit = true;
+      lcd_1.clear();
+      lcd_1.setCursor(0,0);
+      lcd_1.print("Max Temp: ");
+      lcd_1.print(maxTemp);
+      lcd_1.setCursor(0,1);
+      lcd_1.print("Min Temp: ");
+      lcd_1.print(minTemp);
+      goto tempWarning;
+    }
+
+    if(button1State == HIGH)// Temperature Raise
+    {
+      if(useFahrenheit)
+      {
+        if(targetTemp >= 90)
+        {
+          targetTemp = 90;
+        }
+        else
+        {
+          prevTargetTemp++;
+        }
+      }
+      else
+      {
+        if(targetTemp >= 32)
+        {
+          targetTemp = 32;
+        }
+        else
+        {
+          prevTargetTemp++;
+        }
+      }
+    }
+    
+    if(button3State == HIGH)// Temperature Lower
+    {
+      if(useFahrenheit)
+      {
+        if(targetTemp <= 60)
+        {
+          targetTemp = 60;
+        }
+        else
+        {
+          prevTargetTemp--;
+        }
+      }
+      else
+      {
+        if(targetTemp <= 15)
+        {
+          targetTemp = 15;
+        }
+        else
+        {
+          prevTargetTemp--;
+        }
+      }
+      
+    }
+
+    if(prevTargetTemp != targetTemp)// Target Temperature Changer
+    {
+      lcd_1.setCursor(5,1);
+      lcd_1.print(prevTargetTemp);
+      targetTemp = prevTargetTemp;
+      delay(410);
+    }
+
+    if(targetTemp-0.6 > temperature)// Heating On (0.6 degree buffer)
+    {
+      cooling = false;
+      heating = true;
+      digitalWrite(red,HIGH);
+      digitalWrite(blue,LOW);
+      digitalWrite(green,LOW);
+    }
+    else if(targetTemp+0.6 < temperature)// Cooling On (0.6 degree buffer)
+    {
+      cooling = true;
+      heating = false;
+      digitalWrite(blue,HIGH);
+      digitalWrite(red,LOW);
+      digitalWrite(green,LOW);
+    }
+    else// Idle
+    {
+      cooling = false;
+      heating = false;
+      digitalWrite(green,HIGH);
+      digitalWrite(red,LOW);
+      digitalWrite(blue,LOW);
+    }
+
+    if(heating)// Heating Display
+    {
+      lcd_1.setCursor(12,0);
+      lcd_1.print("HEAT");
+      double progress = temperature/targetTemp;
+      if(progress > 0.98)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|#####|");
+      }
+      else if(progress > 0.95)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|####~|");
+      }
+      else if(progress > 0.90)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|###~ |");
+      }
+      else if(progress > 0.88)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|##~  |");
+      }
+      else if(progress <= 0.85)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|#~   |");
+      }
+      else if(progress <= 0.8)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|~    |");
+      }
+    }
+    else if(cooling)// Cooling Display
+    {
+      lcd_1.setCursor(12,0);
+      lcd_1.print("COOL");
+      double progress = targetTemp/temperature;
+      if(progress > 0.98)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|#####|");
+      }
+      else if(progress > 0.95)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|####~|");
+      }
+      else if(progress > 0.90)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|###~ |");
+      }
+      else if(progress > 0.88)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|##~  |");
+      }
+      else if(progress <= 0.85)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|#~   |");
+      }
+      else if(progress <= 0.80)
+      {
+        lcd_1.setCursor(9,1);
+        lcd_1.print("|~    |");
+      }
+    }
+    else if(!(cooling||heating))// Idle Display
+    {
+      lcd_1.setCursor(12,0);
+      lcd_1.print("    ");
+      lcd_1.setCursor(9,1);
+      lcd_1.print("|-----|");
+    }
+    tempWarning:// Mode Skip
+    if(mode == 2)
+    {
+      ;
+    }
+  }
+  else if(mode == 2)// Temperature Warning Mode
+  {
+    if(button2State == HIGH)// Mode Switch
+    {
+      mode = 1;
+      lcd_1.clear();
+      lcd_1.setCursor(6,0);
+      lcd_1.print("MODE");
+      lcd_1.setCursor(3,1);
+      lcd_1.print("Thermostat");
+      delay(1500);
+      lcd_1.clear();
+
+      useFahrenheit = true;
+      lcd_1.setCursor(0,0);
+      lcd_1.print("Now: ");
+      lcd_1.print(temperature);
+      lcd_1.print("F");
+      lcd_1.setCursor(0,1);
+      lcd_1.print("Set: ");
+      lcd_1.print(targetTemp);
+    }
+
+    if(button1State == HIGH && button2State == HIGH)// High/Low Selector
+    {
+      if(highSelected)
+      {
+        highSelected = false;
+      }
+      else
+      {
+        highSelected = true;
+      }
+    }
+
+    if(highSelected)
+    {
+      lcd_1.setCursor(14,0);
+      lcd_1.print("*");
+      lcd_1.setCursor(14,1);
+      lcd_1.print("    ");
+    }
+    else
+    {
+      lcd_1.setCursor(14,1);
+      lcd_1.print("*");
+      lcd_1.setCursor(14,0);
+      lcd_1.print("    ");
+    }
+
+    if(highSelected && button1State == HIGH)// Max Raise
+    {
+      if(useFahrenheit)
+      {
+        if(maxTemp >= 100)
+        {
+          maxTemp = 100;
+        }
+        else
+        {
+          prevMaxTemp++;
+        }
+      }
+      else
+      {
+        if(maxTemp >= 37)
+        {
+          maxTemp = 37;
+        }
+        else
+        {
+          prevMaxTemp++;
+        }
+      }
+    }
+    
+    if(highSelected && button3State == HIGH)// Max Lower
+    {
+      if(useFahrenheit)
+      {
+        if(maxTemp <= 51)
+        {
+          maxTemp = 51;
+        }
+        else
+        {
+          prevMaxTemp--;
+        }
+      }
+      else
+      {
+        if(maxTemp <= 10)
+        {
+          maxTemp = 10;
+        }
+        else
+        {
+          prevMaxTemp--;
+        }
+      }
+    }
+
+    if(!highSelected && button1State == HIGH)// Min Raise
+    {
+      if(useFahrenheit)
+      {
+        if(minTemp >= 99)
+        {
+          minTemp = 99;
+        }
+        else
+        {
+          prevMinTemp++;
+        }
+      }
+      else
+      {
+        if(minTemp >= 37)
+        {
+          minTemp = 37;
+        }
+        else
+        {
+          prevMinTemp++;
+        }
+      }
+    }
+    
+    if(!highSelected && button3State == HIGH)// Min Lower
+    {
+      if(useFahrenheit)
+      {
+        if(minTemp <= 50)
+        {
+          minTemp = 50;
+        }
+        else
+        {
+          prevMinTemp--;
+        }
+      }
+      else
+      {
+        if(minTemp <= 10)
+        {
+          minTemp = 10;
+        }
+        else
+        {
+          prevMinTemp--;
+        }
+      }
+    }
+
+    if(prevMaxTemp != maxTemp || prevMinTemp != minTemp)// Min/Max Temperature Changer
+    {
+      lcd_1.setCursor(10,0);
+      lcd_1.print(prevMaxTemp);
+      maxTemp = prevMaxTemp;
+      lcd_1.setCursor(10,1);
+      lcd_1.print(prevMinTemp);
+      minTemp = prevMinTemp;
+      delay(410);
+    }
+
+    if(minTemp < temperature && temperature < maxTemp)// Warning Flasher
+    {
+      digitalWrite(blue,LOW);
+      digitalWrite(red,LOW);
+      digitalWrite(green,LOW);
+    }
+    else if(temperature > maxTemp)
+    {
+      digitalWrite(blue,LOW);
+      digitalWrite(red,HIGH);
+      digitalWrite(green,LOW);
+      delay(300);
+      digitalWrite(red,LOW);
+      delay(300);
+    }
+    else if(temperature < minTemp)
+    {
+      digitalWrite(blue,HIGH);
+      digitalWrite(red,LOW);
+      digitalWrite(green,LOW);
+      delay(300);
+      digitalWrite(blue,LOW);
+      delay(300);
+    }
+  }
+
+  if(button1State == HIGH && button3State == HIGH)// Unit Changer
+  {
+  	if(useFahrenheit == true)
+    {
+    	useFahrenheit = false;
+      prevTargetTemp = 21;
+    }
+    else
+    {
+    	useFahrenheit = true;
+      prevTargetTemp = 70;
+  	}
+    delay(500);
+  }
+}
